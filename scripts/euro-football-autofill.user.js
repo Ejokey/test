@@ -54,20 +54,25 @@
 
     const bodyHtml = bodyRaw
       .split(/\n{2,}/)
-      .map((block) => {
+      .flatMap((block) => {
         block = block.trim();
-        if (block.startsWith('## ')) {
-          const heading = block.replace(/^##\s*/, '');
-          return `<h1>${escapeHtml(heading)}</h1>`;
+        const lines = block.split('\n').map((l) => l.trim()).filter(Boolean);
+        const parts = [];
+        let rest = lines;
+
+        if (rest.length && rest[0].startsWith('## ')) {
+          parts.push(`<h1>${escapeHtml(rest[0].replace(/^##\s*/, ''))}</h1>`);
+          rest = rest.slice(1);
         }
-        if (block.split('\n').every((l) => l.trim().startsWith('- '))) {
-          const items = block
-            .split('\n')
-            .map((l) => `<li>${escapeHtml(l.replace(/^-\s*/, ''))}</li>`)
-            .join('');
-          return `<ul>${items}</ul>`;
+        if (!rest.length) return parts;
+
+        if (rest.every((l) => l.startsWith('- '))) {
+          const items = rest.map((l) => `<li>${escapeHtml(l.replace(/^-\s*/, ''))}</li>`).join('');
+          parts.push(`<ul>${items}</ul>`);
+        } else {
+          parts.push(`<p>${escapeHtml(rest.join('\n')).replace(/\n/g, '<br>')}</p>`);
         }
-        return `<p>${escapeHtml(block).replace(/\n/g, '<br>')}</p>`;
+        return parts;
       })
       .join('\n');
 
