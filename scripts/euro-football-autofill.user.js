@@ -1,11 +1,10 @@
 // ==UserScript==
 // @name         Euro-Football.ru — автозаполнение прогноза
 // @namespace    euro-football-autofill
-// @version      0.1.0
+// @version      0.2.0
 // @description  Вставляет прогноз из буфера обмена (сгенерированный в Claude) в форму "Добавить материал" админки euro-football.ru
-// @match        https://euro-football.ru/admin/*
-// @grant        GM_setClipboard
-// @grant        unsafeWindow
+// @match        https://www.euro-football.ru/admin/content/content/*
+// @grant        none
 // @run-at       document-idle
 // ==/UserScript==
 
@@ -34,29 +33,11 @@
  * <текст>
  * Исход матча: <текст, который пойдёт в поле "Текст прогноза">
  *
- * ВАЖНО: все селекторы ниже — заглушки по структуре со скриншотов.
- * Перед использованием открой реальную страницу "Добавить материал",
- * через ПКМ → "Просмотреть код" найди настоящие атрибуты (id/name/class)
- * и подставь их в блок SELECTORS ниже.
+ * Категория и фото сознательно не трогаются — выбираются вручную.
  */
 
 (function () {
   'use strict';
-
-  const SELECTORS = {
-    titleInput: '#TODO_title_input',                 // Заголовок
-    ckeditorIframe: '.cke_wysiwyg_frame',             // iframe тела CKEditor
-    typeRadioPrognoz: 'input[name="TODO_type"][value="prognoz"]',
-    publishedRadioYes: 'input[name="TODO_published"][value="1"]',
-    importanceRadioNone: 'input[name="TODO_importance"][value="none"]',
-    tagsInput: '#TODO_tags_input',                    // текстовое поле ввода тегов (Enter добавляет токен)
-    sourceInput: '#TODO_source_input',
-    matchCheckboxes: '.TODO_matches_list input[type="checkbox"]',
-    matchLabelWrapper: '.TODO_matches_list label',     // для поиска по тексту команд
-    oddsInput: '#TODO_odds_input',                     // Коэффициент
-    prognozTextInput: '#TODO_prognoz_text_input',       // Текст прогноза
-    hideFromFeedsCheckbox: '#TODO_hide_from_feeds_checkbox', // "Не отображать в основных лентах новостей"
-  };
 
   function parseSource(raw) {
     const get = (re) => (raw.match(re) || [, ''])[1].trim();
@@ -108,61 +89,81 @@
   }
 
   function fillForm(data) {
-    const titleEl = document.querySelector(SELECTORS.titleInput);
-    if (titleEl) setNativeValue(titleEl, data.title);
-    else console.warn('[autofill] заголовок: селектор не найден', SELECTORS.titleInput);
+    const $ = window.jQuery;
+    const missing = [];
 
-    const frame = document.querySelector(SELECTORS.ckeditorIframe);
-    if (frame && frame.contentDocument) {
-      frame.contentDocument.body.innerHTML = data.bodyHtml;
+    const titleEl = document.getElementById('contentform-title');
+    if (titleEl) setNativeValue(titleEl, data.title);
+    else missing.push('Заголовок (#contentform-title)');
+
+    if (window.CKEDITOR && CKEDITOR.instances['contentform-textfull']) {
+      CKEDITOR.instances['contentform-textfull'].setData(data.bodyHtml);
     } else {
-      console.warn('[autofill] CKEditor iframe не найден', SELECTORS.ckeditorIframe);
+      missing.push('Тело статьи (CKEDITOR contentform-textfull) — редактор ещё не загрузился?');
     }
 
-    [SELECTORS.typeRadioPrognoz, SELECTORS.publishedRadioYes, SELECTORS.importanceRadioNone].forEach((sel) => {
-      const el = document.querySelector(sel);
-      if (el) el.click();
-      else console.warn('[autofill] радио не найдено', sel);
-    });
+    const typeRadio = document.getElementById('indicator-anons'); // "Прогноз"
+    if (typeRadio) typeRadio.click();
+    else missing.push('Тип материала "Прогноз" (#indicator-anons)');
 
-    const tagsInput = document.querySelector(SELECTORS.tagsInput);
-    if (tagsInput) {
+    const publishedRadio = document.querySelector('input[name="ContentForm[published]"][value="1"]');
+    if (publishedRadio) publishedRadio.click();
+    else missing.push('Радио "Опубликован"');
+
+    const priorityRadio = document.querySelector('input[name="ContentForm[priority]"][value="none"]');
+    if (priorityRadio) priorityRadio.click();
+    else missing.push('Радио "Важность: Отсутствует"');
+
+    if ($ && $.fn.select2) {
+      const $tags = $('#contentform-marks');
       data.tags.forEach((tag) => {
-        setNativeValue(tagsInput, tag);
-        tagsInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+        if (!tag || tag.trim() === 'Сборная ') return;
+        const option = new Option(tag, tag, true, true);
+        $tags.append(option).trigger('change');
       });
     } else {
-      console.warn('[autofill] поле тегов не найдено', SELECTORS.tagsInput);
+      missing.push('Теги (#contentform-marks, select2 не найден на странице)');
     }
 
-    const sourceEl = document.querySelector(SELECTORS.sourceInput);
+    const sourceEl = document.getElementById('contentform-source');
     if (sourceEl) setNativeValue(sourceEl, 'Euro-Football.Ru');
+    else missing.push('Источник (#contentform-source)');
 
-    const matchLabels = document.querySelectorAll(SELECTORS.matchLabelWrapper);
+    const matchInputs = document.querySelectorAll('input[name="ContentForm[matches][]"]');
     let matchFound = false;
-    matchLabels.forEach((label) => {
-      const text = label.textContent || '';
-      if (text.includes(data.team1) && text.includes(data.team2) && (!data.date || text.includes(data.date))) {
-        const cb = label.querySelector('input[type="checkbox"]') || document.getElementById(label.htmlFor);
-        if (cb && !cb.checked) cb.click();
+    matchInputs.forEach((cb) => {
+      const wrapper = cb.closest('.match');
+      const text = wrapper ? wrapper.textContent : '';
+      if (data.team1 && data.team2 && text.includes(data.team1) && text.includes(data.team2)
+          && (!data.date || text.includes(data.date))) {
+        if (!cb.checked) cb.click();
         matchFound = true;
       }
     });
-    if (!matchFound) console.warn('[autofill] матч не найден по командам/дате', data.team1, data.team2, data.date);
+    if (!matchFound) missing.push(`Матч не найден по командам "${data.team1}"/"${data.team2}" и дате "${data.date}"`);
 
-    const oddsEl = document.querySelector(SELECTORS.oddsInput);
+    const oddsEl = document.getElementById('contentform-forecast_coeff');
     if (oddsEl) setNativeValue(oddsEl, data.odds);
+    else missing.push('Коэффициент (#contentform-forecast_coeff)');
 
-    const prognozTextEl = document.querySelector(SELECTORS.prognozTextInput);
+    const prognozTextEl = document.getElementById('contentform-forecast_text');
     if (prognozTextEl) setNativeValue(prognozTextEl, data.outcome);
+    else missing.push('Текст прогноза (#contentform-forecast_text)');
 
-    const hideCb = document.querySelector(SELECTORS.hideFromFeedsCheckbox);
+    const hideCb = document.getElementById('contentform-ishidemainlist');
     if (hideCb && !hideCb.checked) hideCb.click();
+    else if (!hideCb) missing.push('Чекбокс "Не отображать в основных лентах новостей"');
 
-    console.log('[autofill] готово. Проверь поля и нажми "Сохранить".');
+    if (missing.length) {
+      alert('Форма заполнена частично. Проверь вручную:\n\n' + missing.join('\n'));
+    } else {
+      console.log('[autofill] готово. Проверь поля и нажми "Сохранить".');
+    }
   }
 
   function addButton() {
+    if (!document.getElementById('content-form')) return; // страница без формы материала
+
     const btn = document.createElement('button');
     btn.textContent = 'Вставить из буфера и заполнить форму';
     btn.type = 'button';
