@@ -61,16 +61,16 @@
         let rest = lines;
 
         if (rest.length && rest[0].startsWith('## ')) {
-          parts.push(`<h1>${escapeHtml(rest[0].replace(/^##\s*/, ''))}</h1>`);
+          parts.push(`<h1><strong>${escapeHtml(rest[0].replace(/^##\s*/, ''))}</strong></h1>`);
           rest = rest.slice(1);
         }
         if (!rest.length) return parts;
 
         if (rest.every((l) => l.startsWith('- '))) {
-          const items = rest.map((l) => `<li>${escapeHtml(l.replace(/^-\s*/, ''))}</li>`).join('');
-          parts.push(`<ul>${items}</ul>`);
+          const line = rest.map((l) => '– ' + escapeHtml(l.replace(/^-\s*/, ''))).join('<br />\n');
+          parts.push(`<p>${line}</p>`);
         } else {
-          parts.push(`<p>${escapeHtml(rest.join('\n')).replace(/\n/g, '<br>')}</p>`);
+          parts.push(`<p>${escapeHtml(rest.join('\n')).replace(/\n/g, '<br />')}</p>`);
         }
         return parts;
       })
