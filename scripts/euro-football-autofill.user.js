@@ -40,6 +40,7 @@
   'use strict';
 
   function parseSource(raw) {
+    raw = raw.replace(/\r\n/g, '\n');
     const get = (re) => (raw.match(re) || [, ''])[1].trim();
 
     const title = get(/^Заголовок:\s*(.+)$/m);
