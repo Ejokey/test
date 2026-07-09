@@ -34,6 +34,10 @@
  * Исход матча: <текст, который пойдёт в поле "Текст прогноза">
  *
  * Категория и фото сознательно не трогаются — выбираются вручную.
+ *
+ * Две кнопки на странице:
+ * - "ЧМ-2026" — теги: Сборная <Команда1>, Сборная <Команда2>, ЧМ-2026, прогнозы на футбол
+ * - "Первая лига" — теги: <Команда1>, <Команда2>, прогнозы на футбол (без "Сборная" и без ЧМ-2026)
  */
 
 (function () {
@@ -77,9 +81,14 @@
       })
       .join('\n');
 
-    const tags = ['Сборная ' + team1, 'Сборная ' + team2, 'ЧМ-2026', 'прогнозы на футбол'];
+    return { title, team1, team2, date, odds, outcome, bodyHtml };
+  }
 
-    return { title, team1, team2, date, odds, outcome, bodyHtml, tags };
+  function buildTags(data, tagMode) {
+    if (tagMode === 'liga') {
+      return [data.team1, data.team2, 'прогнозы на футбол'];
+    }
+    return ['Сборная ' + data.team1, 'Сборная ' + data.team2, 'ЧМ-2026', 'прогнозы на футбол'];
   }
 
   function escapeHtml(s) {
@@ -94,9 +103,10 @@
     el.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
-  function fillForm(data) {
+  function fillForm(data, tagMode) {
     const $ = window.jQuery;
     const missing = [];
+    const tags = buildTags(data, tagMode);
 
     const titleEl = document.getElementById('contentform-title');
     if (titleEl) setNativeValue(titleEl, data.title);
@@ -122,8 +132,8 @@
 
     if ($ && $.fn.select2) {
       const $tags = $('#contentform-marks');
-      data.tags.forEach((tag) => {
-        if (!tag || tag.trim() === 'Сборная ') return;
+      tags.forEach((tag) => {
+        if (!tag) return;
         const option = new Option(tag, tag, true, true);
         $tags.append(option).trigger('change');
       });
@@ -132,7 +142,7 @@
     }
 
     const sourceEl = document.getElementById('contentform-source');
-    if (sourceEl) setNativeValue(sourceEl, 'Euro-Football.Ru');
+    if (sourceEl) setNativeValue(sourceEl, 'Euro-Football.ru');
     else missing.push('Источник (#contentform-source)');
 
     const matchInputs = document.querySelectorAll('input[name="ContentForm[matches][]"]');
@@ -167,15 +177,27 @@
     }
   }
 
-  function addButton() {
-    if (!document.getElementById('content-form')) return; // страница без формы материала
+  async function onFillClick(tagMode) {
+    try {
+      const raw = await navigator.clipboard.readText();
+      const data = parseSource(raw);
+      if (!data.title) {
+        alert('Не удалось распознать формат. Проверь, что в буфере — текст от Claude в нужном шаблоне.');
+        return;
+      }
+      fillForm(data, tagMode);
+    } catch (e) {
+      alert('Не удалось прочитать буфер обмена: ' + e.message + '\nРазреши доступ к буферу для этой страницы.');
+    }
+  }
 
+  function makeButton(label, top, tagMode) {
     const btn = document.createElement('button');
-    btn.textContent = 'Вставить из буфера и заполнить форму';
+    btn.textContent = label;
     btn.type = 'button';
     Object.assign(btn.style, {
       position: 'fixed',
-      top: '10px',
+      top: top,
       right: '10px',
       zIndex: 999999,
       padding: '10px 16px',
@@ -186,21 +208,16 @@
       cursor: 'pointer',
       fontSize: '14px',
     });
-    btn.addEventListener('click', async () => {
-      try {
-        const raw = await navigator.clipboard.readText();
-        const data = parseSource(raw);
-        if (!data.title) {
-          alert('Не удалось распознать формат. Проверь, что в буфере — текст от Claude в нужном шаблоне.');
-          return;
-        }
-        fillForm(data);
-      } catch (e) {
-        alert('Не удалось прочитать буфер обмена: ' + e.message + '\nРазреши доступ к буферу для этой страницы.');
-      }
-    });
-    document.body.appendChild(btn);
+    btn.addEventListener('click', () => onFillClick(tagMode));
+    return btn;
   }
 
-  addButton();
+  function addButtons() {
+    if (!document.getElementById('content-form')) return; // страница без формы материала
+
+    document.body.appendChild(makeButton('Вставить из буфера (ЧМ-2026)', '10px', 'wc'));
+    document.body.appendChild(makeButton('Вставить из буфера (Первая лига)', '54px', 'liga'));
+  }
+
+  addButtons();
 })();
