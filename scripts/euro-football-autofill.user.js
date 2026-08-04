@@ -214,10 +214,20 @@
 
   function addButtons() {
     if (!document.getElementById('content-form')) return; // страница без формы материала
+    if (document.getElementById('autofill-btn-wc')) return; // уже добавлены
 
-    document.body.appendChild(makeButton('Вставить из буфера (ЧМ-2026)', '10px', 'wc'));
-    document.body.appendChild(makeButton('Вставить из буфера (Первая лига)', '54px', 'liga'));
+    const btnWc = makeButton('Вставить из буфера (ЧМ-2026)', '10px', 'wc');
+    btnWc.id = 'autofill-btn-wc';
+    const btnLiga = makeButton('Вставить из буфера (Первая лига)', '54px', 'liga');
+    btnLiga.id = 'autofill-btn-liga';
+
+    document.body.appendChild(btnWc);
+    document.body.appendChild(btnLiga);
   }
 
+  // Сайт использует pjax (AJAX-навигацию без полной перезагрузки страницы),
+  // поэтому обычного запуска при document-idle недостаточно — форма может
+  // появиться в DOM позже, без нового срабатывания userscript.
   addButtons();
+  new MutationObserver(addButtons).observe(document.body, { childList: true, subtree: true });
 })();
